@@ -106,12 +106,13 @@ func TestTracker_Cleanup(t *testing.T) {
 
 	maxAge := 10 * time.Millisecond
 	tracker := NewTracker(maxAge)
+	defer tracker.Stop()
 
 	tracker.Update(&LocationReport{VehicleID: "bus-1", Timestamp: 1})
 
-	time.Sleep(25 * time.Millisecond)
-
-	tracker.mu.RLock()
-	defer tracker.mu.RUnlock()
-	assert.Len(t, tracker.vehicles, 0, "stale vehicle should be deleted from internal map")
+	assert.Eventually(t, func() bool {
+		tracker.mu.RLock()
+		defer tracker.mu.RUnlock()
+		return len(tracker.vehicles) == 0
+	}, 100*time.Millisecond, 5*time.Millisecond, "stale vehicle should be deleted from internal map")
 }
