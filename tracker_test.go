@@ -11,6 +11,7 @@ import (
 
 func TestTracker_Update(t *testing.T) {
 	tracker := NewTracker(5 * time.Minute)
+	defer tracker.Stop()
 
 	loc := &LocationReport{
 		VehicleID: "bus-1",
@@ -36,6 +37,7 @@ func TestTracker_Update(t *testing.T) {
 
 func TestTracker_UpdateOverwrites(t *testing.T) {
 	tracker := NewTracker(5 * time.Minute)
+	defer tracker.Stop()
 
 	tracker.Update(&LocationReport{VehicleID: "bus-1", Latitude: 1.0, Longitude: 2.0, Timestamp: 1})
 	tracker.Update(&LocationReport{VehicleID: "bus-1", Latitude: 3.0, Longitude: 4.0, Timestamp: 2})
@@ -48,6 +50,7 @@ func TestTracker_UpdateOverwrites(t *testing.T) {
 
 func TestTracker_MultipleVehicles(t *testing.T) {
 	tracker := NewTracker(5 * time.Minute)
+	defer tracker.Stop()
 
 	tracker.Update(&LocationReport{VehicleID: "bus-1", Latitude: 1, Longitude: 2, Timestamp: 1})
 	tracker.Update(&LocationReport{VehicleID: "bus-2", Latitude: 3, Longitude: 4, Timestamp: 2})
@@ -58,6 +61,7 @@ func TestTracker_MultipleVehicles(t *testing.T) {
 
 func TestTracker_Staleness(t *testing.T) {
 	tracker := NewTracker(1 * time.Millisecond)
+	defer tracker.Stop()
 
 	tracker.Update(&LocationReport{VehicleID: "bus-1", Latitude: 1, Longitude: 2, Timestamp: 1})
 	time.Sleep(5 * time.Millisecond)
@@ -68,6 +72,7 @@ func TestTracker_Staleness(t *testing.T) {
 
 func TestTracker_Concurrent(t *testing.T) {
 	tracker := NewTracker(5 * time.Minute)
+	defer tracker.Stop()
 	var wg sync.WaitGroup
 
 	for i := 0; i < 100; i++ {
