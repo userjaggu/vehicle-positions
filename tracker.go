@@ -23,6 +23,7 @@ type Tracker struct {
 	vehicles map[string]*VehicleState
 	maxAge   time.Duration
 	done     chan struct{}
+	stopOnce sync.Once
 }
 
 // NewTracker creates a Tracker with the given staleness threshold.
@@ -54,7 +55,9 @@ func NewTracker(maxAge time.Duration) *Tracker {
 }
 
 func (t *Tracker) Stop() {
-	close(t.done)
+	t.stopOnce.Do(func() {
+		close(t.done)
+	})
 }
 
 // Update stores or replaces the latest position for a vehicle.
