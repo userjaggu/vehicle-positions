@@ -13,6 +13,7 @@ import (
 )
 
 func TestRequestLogger_LogsFields(t *testing.T) {
+	// Not safe for t.Parallel(); uses global logger
 	var buf bytes.Buffer
 	original := slog.Default()
 	t.Cleanup(func() { slog.SetDefault(original) })
@@ -36,10 +37,11 @@ func TestRequestLogger_LogsFields(t *testing.T) {
 	assert.Equal(t, "POST", entry["method"])
 	assert.Equal(t, "/api/v1/locations", entry["path"])
 	assert.Equal(t, float64(http.StatusCreated), entry["status"])
-	assert.Contains(t, entry, "duration")
+	assert.Contains(t, entry, "duration_ms")
 }
 
 func TestRequestLogger_DefaultStatus(t *testing.T) {
+	// Not safe for t.Parallel(); uses global logger
 	var buf bytes.Buffer
 	original := slog.Default()
 	t.Cleanup(func() { slog.SetDefault(original) })
