@@ -23,6 +23,9 @@ func main() {
 	idleTimeout := envDurationOrDefault("IDLE_TIMEOUT", 60*time.Second)
 
 	jwtSecretStr := os.Getenv("JWT_SECRET")
+	if jwtSecretStr == "" {
+		log.Fatal("JWT_SECRET environment variable is not set")
+	}
 	if len(jwtSecretStr) < 32 {
 		log.Fatal("JWT_SECRET must be at least 32 bytes long for HMAC-SHA256 security")
 	}

@@ -12,9 +12,10 @@ func TestStore_GetUserByEmail_Found(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
 
-	// Clean up and insert a test user
-	store.pool.Exec(ctx, "DELETE FROM users WHERE email = 'testuser@example.com'")
-	_, err := store.pool.Exec(ctx,
+	_, err := store.pool.Exec(ctx, "DELETE FROM users WHERE email = 'testuser@example.com'")
+	require.NoError(t, err)
+
+	_, err = store.pool.Exec(ctx,
 		`INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, $4)`,
 		"Test User",
 		"testuser@example.com",

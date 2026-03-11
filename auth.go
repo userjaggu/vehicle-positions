@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -50,6 +51,8 @@ type UserFetcher interface {
 
 func handleLogin(fetcher UserFetcher, secret []byte) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<10)
+
 		var req LoginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -86,7 +89,7 @@ func handleLogin(fetcher UserFetcher, secret []byte) http.HandlerFunc {
 
 		tokenStr, err := generateJWT(user, secret)
 		if err != nil {
-			log.Printf("login: failed to generate JWT: %v", err) // Point 8
+			log.Printf("login: failed to generate JWT: %v", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 			return
 		}
@@ -97,12 +100,14 @@ func handleLogin(fetcher UserFetcher, secret []byte) http.HandlerFunc {
 
 // generateJWT creates a signed JWT valid for 24 hours.
 func generateJWT(user *User, secret []byte) (string, error) {
+	now := time.Now()
+
 	claims := jwt.MapClaims{
 		"sub":   user.ID,
 		"email": user.Email,
 		"role":  user.Role,
-		"exp":   time.Now().Add(24 * time.Hour).Unix(),
-		"iat":   time.Now().Unix(),
+		"exp":   now.Add(24 * time.Hour).Unix(),
+		"iat":   now.Unix(),
 		"iss":   "vehicle-positions-api",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -122,8 +127,11 @@ func requireAuth(secret []byte) func(http.Handler) http.Handler {
 			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 
 			token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
+				if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+					return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+				}
 				return secret, nil
-			}, jwt.WithIssuer("vehicle-positions-api"))
+			}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithIssuer("vehicle-positions-api"))
 
 			if err != nil || !token.Valid {
 				log.Printf("auth: token validation failed: %v", err)
