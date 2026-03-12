@@ -2,6 +2,7 @@ package main
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -19,11 +20,12 @@ type VehicleState struct {
 
 // Tracker maintains an in-memory map of current vehicle positions.
 type Tracker struct {
-	mu       sync.RWMutex
-	vehicles map[string]*VehicleState
-	maxAge   time.Duration
-	done     chan struct{}
-	stopOnce sync.Once
+	mu        sync.RWMutex
+	vehicles  map[string]*VehicleState
+	totalSeen atomic.Int64
+	maxAge    time.Duration
+	done      chan struct{}
+	stopOnce  sync.Once
 }
 
 // NewTracker creates a Tracker with the given staleness threshold.
@@ -64,6 +66,9 @@ func (t *Tracker) Stop() {
 func (t *Tracker) Update(loc *LocationReport) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if _, exists := t.vehicles[loc.VehicleID]; !exists {
+		t.totalSeen.Add(1)
+	}
 	t.vehicles[loc.VehicleID] = &VehicleState{
 		VehicleID: loc.VehicleID,
 		TripID:    loc.TripID,
@@ -104,7 +109,7 @@ func (t *Tracker) Status() TrackerStatus {
 	defer t.mu.RUnlock()
 	cutoff := time.Now().Add(-t.maxAge)
 	var s TrackerStatus
-	s.TotalVehiclesTracked = len(t.vehicles)
+	s.TotalVehiclesTracked = int(t.totalSeen.Load())
 	var latest time.Time
 	for _, v := range t.vehicles {
 		if v.UpdatedAt.After(cutoff) {
