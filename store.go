@@ -3,8 +3,9 @@ package main
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/OneBusAway/vehicle-positions/db"
@@ -54,14 +55,14 @@ func (s *Store) Migrate(databaseURL string) error {
 	defer func() {
 		srcErr, dbErr := m.Close()
 		if srcErr != nil {
-			log.Printf("failed to close migration source: %v", srcErr)
+			slog.Warn("failed to close migration source", "error", srcErr)
 		}
 		if dbErr != nil {
-			log.Printf("failed to close migration database connection: %v", dbErr)
+			slog.Warn("failed to close migration database connection", "error", dbErr)
 		}
 	}()
 
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
