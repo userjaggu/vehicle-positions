@@ -71,8 +71,10 @@ func TestStore_SaveLocation(t *testing.T) {
 	defer store.Close()
 
 	// Clean up from prior runs
-	store.pool.Exec(ctx, "DELETE FROM location_points")
-	store.pool.Exec(ctx, "DELETE FROM vehicles")
+	_, err = store.pool.Exec(ctx, "DELETE FROM location_points")
+	require.NoError(t, err)
+	_, err = store.pool.Exec(ctx, "DELETE FROM vehicles")
+	require.NoError(t, err)
 
 	loc := &LocationReport{
 		VehicleID: "test-bus-1",
@@ -117,8 +119,10 @@ func TestStore_SaveLocation_UpsertVehicle(t *testing.T) {
 	defer store.Close()
 
 	// Clean up
-	store.pool.Exec(ctx, "DELETE FROM location_points")
-	store.pool.Exec(ctx, "DELETE FROM vehicles")
+	_, err = store.pool.Exec(ctx, "DELETE FROM location_points")
+	require.NoError(t, err)
+	_, err = store.pool.Exec(ctx, "DELETE FROM vehicles")
+	require.NoError(t, err)
 
 	loc := &LocationReport{VehicleID: "test-bus-2", Latitude: 1, Longitude: 2, Timestamp: 100}
 
@@ -148,21 +152,28 @@ func TestStore_GetRecentLocations(t *testing.T) {
 	defer store.Close()
 
 	// Clean up
-	store.pool.Exec(ctx, "DELETE FROM location_points")
-	store.pool.Exec(ctx, "DELETE FROM vehicles")
+	_, err = store.pool.Exec(ctx, "DELETE FROM location_points")
+	require.NoError(t, err)
+	_, err = store.pool.Exec(ctx, "DELETE FROM vehicles")
+	require.NoError(t, err)
 
 	now := time.Now()
 
 	// Insert an old location that should be filtered out
-	store.pool.Exec(ctx, "INSERT INTO vehicles (id) VALUES ('bus-stale')")
-	store.pool.Exec(ctx, "INSERT INTO location_points (vehicle_id, trip_id, latitude, longitude, timestamp, received_at) VALUES ('bus-stale', '', 1, 1, 1, $1)", now.Add(-10*time.Minute))
+	_, err = store.pool.Exec(ctx, "INSERT INTO vehicles (id) VALUES ('bus-stale')")
+	require.NoError(t, err)
+	_, err = store.pool.Exec(ctx, "INSERT INTO location_points (vehicle_id, trip_id, latitude, longitude, timestamp, received_at) VALUES ('bus-stale', '', 1, 1, 1, $1)", now.Add(-10*time.Minute))
+	require.NoError(t, err)
 
 	// Insert a recent location that should be included
-	store.pool.Exec(ctx, "INSERT INTO vehicles (id) VALUES ('bus-fresh')")
-	store.pool.Exec(ctx, "INSERT INTO location_points (vehicle_id, trip_id, latitude, longitude, timestamp, received_at) VALUES ('bus-fresh', 'route-1', 2, 2, 2, $1)", now)
+	_, err = store.pool.Exec(ctx, "INSERT INTO vehicles (id) VALUES ('bus-fresh')")
+	require.NoError(t, err)
+	_, err = store.pool.Exec(ctx, "INSERT INTO location_points (vehicle_id, trip_id, latitude, longitude, timestamp, received_at) VALUES ('bus-fresh', 'route-1', 2, 2, 2, $1)", now)
+	require.NoError(t, err)
 
 	// Insert an even more recent location for the same vehicle to test DISTINCT ON
-	store.pool.Exec(ctx, "INSERT INTO location_points (vehicle_id, trip_id, latitude, longitude, timestamp, received_at) VALUES ('bus-fresh', 'route-1', 3, 3, 3, $1)", now.Add(1*time.Minute))
+	_, err = store.pool.Exec(ctx, "INSERT INTO location_points (vehicle_id, trip_id, latitude, longitude, timestamp, received_at) VALUES ('bus-fresh', 'route-1', 3, 3, 3, $1)", now.Add(1*time.Minute))
+	require.NoError(t, err)
 
 	// Query with a 5-minute staleness threshold
 	cutoff := now.Add(-5 * time.Minute)
@@ -210,8 +221,10 @@ func TestStore_SaveLocation_NullableFieldRoundTrip(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
 
-	store.pool.Exec(ctx, "DELETE FROM location_points")
-	store.pool.Exec(ctx, "DELETE FROM vehicles")
+	_, err := store.pool.Exec(ctx, "DELETE FROM location_points")
+	require.NoError(t, err)
+	_, err = store.pool.Exec(ctx, "DELETE FROM vehicles")
+	require.NoError(t, err)
 
 	loc := &LocationReport{
 		VehicleID: "bus-nullable",
@@ -224,7 +237,7 @@ func TestStore_SaveLocation_NullableFieldRoundTrip(t *testing.T) {
 		Timestamp: 1752566400,
 	}
 
-	err := store.SaveLocation(ctx, loc)
+	err = store.SaveLocation(ctx, loc)
 	require.NoError(t, err)
 
 	cutoff := time.Now().Add(-5 * time.Minute)
@@ -247,8 +260,10 @@ func TestStore_SaveLocation_DriverIDPersisted(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
 
-	store.pool.Exec(ctx, "DELETE FROM location_points")
-	store.pool.Exec(ctx, "DELETE FROM vehicles")
+	_, err := store.pool.Exec(ctx, "DELETE FROM location_points")
+	require.NoError(t, err)
+	_, err = store.pool.Exec(ctx, "DELETE FROM vehicles")
+	require.NoError(t, err)
 
 	loc := &LocationReport{
 		VehicleID: "bus-driver-test",
@@ -258,7 +273,7 @@ func TestStore_SaveLocation_DriverIDPersisted(t *testing.T) {
 		DriverID:  "99",
 	}
 
-	err := store.SaveLocation(ctx, loc)
+	err = store.SaveLocation(ctx, loc)
 	require.NoError(t, err)
 
 	var driverID string
@@ -274,8 +289,10 @@ func TestStore_SaveLocation_DriverIDDefaultsToEmpty(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
 
-	store.pool.Exec(ctx, "DELETE FROM location_points")
-	store.pool.Exec(ctx, "DELETE FROM vehicles")
+	_, err := store.pool.Exec(ctx, "DELETE FROM location_points")
+	require.NoError(t, err)
+	_, err = store.pool.Exec(ctx, "DELETE FROM vehicles")
+	require.NoError(t, err)
 
 	loc := &LocationReport{
 		VehicleID: "bus-no-driver",
@@ -285,7 +302,7 @@ func TestStore_SaveLocation_DriverIDDefaultsToEmpty(t *testing.T) {
 		// DriverID intentionally omitted
 	}
 
-	err := store.SaveLocation(ctx, loc)
+	err = store.SaveLocation(ctx, loc)
 	require.NoError(t, err)
 
 	var driverID string
@@ -301,8 +318,10 @@ func TestStore_GetRecentLocations_ReturnsDriverID(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
 
-	store.pool.Exec(ctx, "DELETE FROM location_points")
-	store.pool.Exec(ctx, "DELETE FROM vehicles")
+	_, err := store.pool.Exec(ctx, "DELETE FROM location_points")
+	require.NoError(t, err)
+	_, err = store.pool.Exec(ctx, "DELETE FROM vehicles")
+	require.NoError(t, err)
 
 	loc := &LocationReport{
 		VehicleID: "bus-driver-recent",
@@ -311,7 +330,7 @@ func TestStore_GetRecentLocations_ReturnsDriverID(t *testing.T) {
 		Timestamp: time.Now().Unix(),
 		DriverID:  "77",
 	}
-	err := store.SaveLocation(ctx, loc)
+	err = store.SaveLocation(ctx, loc)
 	require.NoError(t, err)
 
 	cutoff := time.Now().Add(-5 * time.Minute)

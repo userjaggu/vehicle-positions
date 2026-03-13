@@ -362,13 +362,23 @@ func (m *mockStore) SaveLocation(ctx context.Context, loc *LocationReport) error
 	return nil
 }
 
+func postLocationWithClaims(handler http.HandlerFunc, loc LocationReport, claims jwt.MapClaims) *httptest.ResponseRecorder {
+	body, _ := json.Marshal(loc)
+	req := httptest.NewRequest("POST", "/api/v1/locations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := context.WithValue(req.Context(), claimsKey, claims)
+	w := httptest.NewRecorder()
+	handler(w, req.WithContext(ctx))
+	return w
+}
+
 func TestHandlePostLocation_HappyPath(t *testing.T) {
 	tracker := NewTracker(5 * time.Minute)
 	mStore := &mockStore{}
 	handler := handlePostLocation(mStore, tracker, NewVehicleRateLimiter())
 
 	loc := LocationReport{VehicleID: "bus-1", Latitude: 1, Longitude: 2, Timestamp: time.Now().Unix()}
-	w := postLocation(handler, loc)
+	w := postLocationWithClaims(handler, loc, jwt.MapClaims{"sub": "driver-1"})
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 	assert.True(t, mStore.saved, "location should be saved to store")
@@ -381,7 +391,7 @@ func TestHandlePostLocation_StoreFailure(t *testing.T) {
 	handler := handlePostLocation(mStore, tracker, NewVehicleRateLimiter())
 
 	loc := LocationReport{VehicleID: "bus-1", Latitude: 1, Longitude: 2, Timestamp: time.Now().Unix()}
-	w := postLocation(handler, loc)
+	w := postLocationWithClaims(handler, loc, jwt.MapClaims{"sub": "driver-1"})
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Len(t, tracker.ActiveVehicles(), 0, "tracker should NOT be updated on DB failure")
@@ -428,7 +438,7 @@ func TestHandlePostLocation_ContentTypeWithCharsetAccepted(t *testing.T) {
 	mStore := &mockStore{}
 	handler := handlePostLocation(mStore, tracker, NewVehicleRateLimiter())
 
-	body := []byte(fmt.Sprintf(`{"vehicle_id":"bus-1","latitude":1,"longitude":2,"timestamp":%d}`, time.Now().Unix()))
+	body := []byte(`{"vehicle_id":"bus-1","latitude":1,"longitude":2,"timestamp":100}`)
 	req := httptest.NewRequest("POST", "/api/v1/locations", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	ctx := context.WithValue(req.Context(), claimsKey, jwt.MapClaims{"sub": "driver-1"})
@@ -500,21 +510,20 @@ func TestHandlePostLocation_TrailingWhitespaceAccepted(t *testing.T) {
 	mStore := &mockStore{}
 	handler := handlePostLocation(mStore, tracker, NewVehicleRateLimiter())
 
+<<<<<<< HEAD
 	body := []byte(fmt.Sprintf(`{"vehicle_id":"bus-1","latitude":1,"longitude":2,"timestamp":%d}   `+"\n", time.Now().Unix()))
 	w := postLocationWithBody(handler, body, "application/json")
+=======
+	body := []byte("{\"vehicle_id\":\"bus-1\",\"latitude\":1,\"longitude\":2,\"timestamp\":100}   \n")
+	req := httptest.NewRequest("POST", "/api/v1/locations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := context.WithValue(req.Context(), claimsKey, jwt.MapClaims{"sub": "driver-1"})
+	w := httptest.NewRecorder()
+	handler(w, req.WithContext(ctx))
+>>>>>>> b9c46be (enforce strict JWT claims extraction in handlePostLocation)
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 	assert.True(t, mStore.saved, "location should be saved when only trailing whitespace exists")
-}
-
-func postLocationWithClaims(handler http.HandlerFunc, loc LocationReport, claims jwt.MapClaims) *httptest.ResponseRecorder {
-	body, _ := json.Marshal(loc)
-	req := httptest.NewRequest("POST", "/api/v1/locations", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	ctx := context.WithValue(req.Context(), claimsKey, claims)
-	w := httptest.NewRecorder()
-	handler(w, req.WithContext(ctx))
-	return w
 }
 
 func TestHandlePostLocation_DriverIDExtractedFromClaims(t *testing.T) {
@@ -532,7 +541,11 @@ func TestHandlePostLocation_DriverIDExtractedFromClaims(t *testing.T) {
 	assert.Equal(t, "42", mStore.lastDriverID, "driver_id must be populated from JWT sub claim")
 }
 
-func TestHandlePostLocation_DriverIDEmptyWithoutJWTContext(t *testing.T) {
+// TestHandlePostLocation_MissingJWTContext replaces the old
+// TestHandlePostLocation_DriverIDEmptyWithoutJWTContext.
+// Missing claims now means requireAuth middleware did not run — a server
+// misconfiguration — so the handler must return 500 and must not save.
+func TestHandlePostLocation_MissingJWTContext(t *testing.T) {
 	tracker := NewTracker(5 * time.Minute)
 	defer tracker.Stop()
 	mStore := &mockStore{}
@@ -541,8 +554,48 @@ func TestHandlePostLocation_DriverIDEmptyWithoutJWTContext(t *testing.T) {
 	loc := LocationReport{VehicleID: "bus-1", Latitude: 1, Longitude: 2, Timestamp: time.Now().Unix()}
 	w := postLocation(handler, loc)
 
-	assert.Equal(t, http.StatusCreated, w.Code)
-	assert.Equal(t, "", mStore.lastDriverID, "driver_id must be empty when no JWT context present")
+	assert.Equal(t, http.StatusInternalServerError, w.Code, "missing JWT context must return 500, not silently proceed")
+	assert.False(t, mStore.saved, "location must not be saved when JWT context is absent")
+
+	var resp map[string]string
+	err := json.NewDecoder(w.Body).Decode(&resp)
+	require.NoError(t, err)
+	assert.Equal(t, "internal server error", resp["error"])
+}
+
+// TestHandlePostLocation_MissingSubClaim verifies that a JWT with no "sub"
+// returns 401 rather than proceeding with an empty driver_id.
+func TestHandlePostLocation_MissingSubClaim(t *testing.T) {
+	tracker := NewTracker(5 * time.Minute)
+	defer tracker.Stop()
+	mStore := &mockStore{}
+	handler := handlePostLocation(mStore, tracker, NewVehicleRateLimiter())
+
+	loc := LocationReport{VehicleID: "bus-1", Latitude: 1, Longitude: 2, Timestamp: time.Now().Unix()}
+	w := postLocationWithClaims(handler, loc, jwt.MapClaims{"email": "driver@test.com"})
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code, "missing sub claim must return 401")
+	assert.False(t, mStore.saved, "location must not be saved when sub claim is absent")
+
+	var resp map[string]string
+	err := json.NewDecoder(w.Body).Decode(&resp)
+	require.NoError(t, err)
+	assert.Contains(t, resp["error"], "missing subject")
+}
+
+// TestHandlePostLocation_EmptySubClaim verifies that a JWT with sub == ""
+// returns 401 rather than saving a location with an empty driver_id.
+func TestHandlePostLocation_EmptySubClaim(t *testing.T) {
+	tracker := NewTracker(5 * time.Minute)
+	defer tracker.Stop()
+	mStore := &mockStore{}
+	handler := handlePostLocation(mStore, tracker, NewVehicleRateLimiter())
+
+	loc := LocationReport{VehicleID: "bus-1", Latitude: 1, Longitude: 2, Timestamp: time.Now().Unix()}
+	w := postLocationWithClaims(handler, loc, jwt.MapClaims{"sub": ""})
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code, "empty sub claim must return 401")
+	assert.False(t, mStore.saved, "location must not be saved when sub claim is empty")
 }
 
 func TestHandlePostLocation_DriverIDNotAcceptedFromClient(t *testing.T) {
@@ -551,13 +604,14 @@ func TestHandlePostLocation_DriverIDNotAcceptedFromClient(t *testing.T) {
 	mStore := &mockStore{}
 	handler := handlePostLocation(mStore, tracker, NewVehicleRateLimiter())
 
-	// Client tries to sneak driver_id in JSON — DisallowUnknownFields rejects it
 	body := []byte(fmt.Sprintf(`{"vehicle_id":"bus-1","latitude":1,"longitude":2,"timestamp":%d,"driver_id":"spoofed"}`, time.Now().Unix()))
 	w := postLocationWithBody(handler, body, "application/json")
 
 	assert.Equal(t, http.StatusBadRequest, w.Code, "driver_id in JSON body must be rejected as unknown field")
 }
 
+// TestHandlePostLocation_RateLimitBlocksSecondRequest uses postLocationWithClaims
+// because the rate limiter is now keyed on driver_id from JWT sub, not vehicle_id.
 func TestHandlePostLocation_RateLimitBlocksSecondRequest(t *testing.T) {
 	tracker := NewTracker(5 * time.Minute)
 	defer tracker.Stop()
@@ -566,11 +620,12 @@ func TestHandlePostLocation_RateLimitBlocksSecondRequest(t *testing.T) {
 	handler := handlePostLocation(mStore, tracker, rl)
 
 	loc := LocationReport{VehicleID: "bus-rl", Latitude: 1, Longitude: 2, Timestamp: time.Now().Unix()}
+	claims := jwt.MapClaims{"sub": "driver-rl"}
 
-	w1 := postLocation(handler, loc)
+	w1 := postLocationWithClaims(handler, loc, claims)
 	assert.Equal(t, http.StatusCreated, w1.Code, "first request must succeed")
 
-	w2 := postLocation(handler, loc)
+	w2 := postLocationWithClaims(handler, loc, claims)
 	assert.Equal(t, http.StatusTooManyRequests, w2.Code, "immediate second request must be rate limited")
 
 	var resp map[string]string
@@ -579,6 +634,8 @@ func TestHandlePostLocation_RateLimitBlocksSecondRequest(t *testing.T) {
 	assert.Contains(t, resp["error"], "rate limit exceeded")
 }
 
+// TestHandlePostLocation_RateLimitNotSavedOnExcess uses postLocationWithClaims
+// because the rate limiter is now keyed on driver_id from JWT sub, not vehicle_id.
 func TestHandlePostLocation_RateLimitNotSavedOnExcess(t *testing.T) {
 	tracker := NewTracker(5 * time.Minute)
 	defer tracker.Stop()
@@ -587,14 +644,17 @@ func TestHandlePostLocation_RateLimitNotSavedOnExcess(t *testing.T) {
 	handler := handlePostLocation(mStore, tracker, rl)
 
 	loc := LocationReport{VehicleID: "bus-flood", Latitude: 1, Longitude: 2, Timestamp: time.Now().Unix()}
+	claims := jwt.MapClaims{"sub": "driver-flood"}
 
-	postLocation(handler, loc)
+	postLocationWithClaims(handler, loc, claims)
 	mStore.saveCount = 0
 
-	postLocation(handler, loc)
+	postLocationWithClaims(handler, loc, claims)
 	assert.Equal(t, 0, mStore.saveCount, "rate-limited request must not reach the store")
 }
 
+// TestHandlePostLocation_RateLimitDifferentVehiclesAreIndependent uses
+// postLocationWithClaims because rate limiting is now per driver_id, not vehicle_id.
 func TestHandlePostLocation_RateLimitDifferentVehiclesAreIndependent(t *testing.T) {
 	tracker := NewTracker(5 * time.Minute)
 	defer tracker.Stop()
@@ -605,10 +665,12 @@ func TestHandlePostLocation_RateLimitDifferentVehiclesAreIndependent(t *testing.
 	now := time.Now().Unix()
 	locA := LocationReport{VehicleID: "bus-A", Latitude: 1, Longitude: 2, Timestamp: now}
 	locB := LocationReport{VehicleID: "bus-B", Latitude: 1, Longitude: 2, Timestamp: now}
+	claimsA := jwt.MapClaims{"sub": "driver-A"}
+	claimsB := jwt.MapClaims{"sub": "driver-B"}
 
-	assert.Equal(t, http.StatusCreated, postLocation(handler, locA).Code)
-	assert.Equal(t, http.StatusCreated, postLocation(handler, locB).Code)
+	assert.Equal(t, http.StatusCreated, postLocationWithClaims(handler, locA, claimsA).Code)
+	assert.Equal(t, http.StatusCreated, postLocationWithClaims(handler, locB, claimsB).Code)
 
-	assert.Equal(t, http.StatusTooManyRequests, postLocation(handler, locA).Code)
-	assert.Equal(t, http.StatusTooManyRequests, postLocation(handler, locB).Code)
+	assert.Equal(t, http.StatusTooManyRequests, postLocationWithClaims(handler, locA, claimsA).Code)
+	assert.Equal(t, http.StatusTooManyRequests, postLocationWithClaims(handler, locB, claimsB).Code)
 }
