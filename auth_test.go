@@ -225,7 +225,7 @@ func TestGenerateJWT_Claims(t *testing.T) {
 	claims, ok := token.Claims.(jwt.MapClaims)
 	require.True(t, ok)
 
-	assert.Equal(t, float64(42), claims["sub"])
+	assert.Equal(t, "42", claims["sub"])
 	assert.Equal(t, "driver@transit.com", claims["email"])
 	assert.Equal(t, "driver", claims["role"])
 	assert.Equal(t, "vehicle-positions-api", claims["iss"])

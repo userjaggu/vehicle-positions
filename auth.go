@@ -103,7 +103,7 @@ func generateJWT(user *User, secret []byte) (string, error) {
 	now := time.Now()
 
 	claims := jwt.MapClaims{
-		"sub":   user.ID,
+		"sub":   fmt.Sprintf("%d", user.ID),
 		"email": user.Email,
 		"role":  user.Role,
 		"exp":   now.Add(24 * time.Hour).Unix(),
