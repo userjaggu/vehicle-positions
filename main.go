@@ -24,10 +24,12 @@ func main() {
 
 	jwtSecretStr := os.Getenv("JWT_SECRET")
 	if jwtSecretStr == "" {
-		log.Fatal("JWT_SECRET environment variable is not set")
+		slog.Error("JWT_SECRET environment variable is not set")
+		os.Exit(1)
 	}
 	if len(jwtSecretStr) < 32 {
-		log.Fatal("JWT_SECRET must be at least 32 bytes long for HMAC-SHA256 security")
+		slog.Error("JWT_SECRET must be at least 32 bytes long for HMAC-SHA256 security")
+		os.Exit(1)
 	}
 	jwtSecret := []byte(jwtSecretStr)
 
@@ -49,6 +51,9 @@ func main() {
 
 	tracker := NewTracker(maxAge)
 	defer tracker.Stop()
+
+	rateLimiter := NewVehicleRateLimiter()
+	defer rateLimiter.Stop()
 
 	cutoff := time.Now().Add(-maxAge)
 	recentLocations, err := store.GetRecentLocations(ctx, cutoff)
@@ -74,7 +79,7 @@ func main() {
 
 	authMiddleware := requireAuth(jwtSecret)
 
-	mux.Handle("POST /api/v1/locations", authMiddleware(handlePostLocation(store, tracker)))
+	mux.Handle("POST /api/v1/locations", authMiddleware(handlePostLocation(store, tracker, rateLimiter)))
 
 	srv := &http.Server{
 		Addr:         ":" + port,

@@ -242,3 +242,81 @@ func TestStore_Migrate_Idempotent(t *testing.T) {
 	err := store.Migrate(testDatabaseURL(t))
 	assert.NoError(t, err, "second Migrate call should succeed")
 }
+
+func TestStore_SaveLocation_DriverIDPersisted(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	store.pool.Exec(ctx, "DELETE FROM location_points")
+	store.pool.Exec(ctx, "DELETE FROM vehicles")
+
+	loc := &LocationReport{
+		VehicleID: "bus-driver-test",
+		Latitude:  1.0,
+		Longitude: 2.0,
+		Timestamp: time.Now().Unix(),
+		DriverID:  "99",
+	}
+
+	err := store.SaveLocation(ctx, loc)
+	require.NoError(t, err)
+
+	var driverID string
+	err = store.pool.QueryRow(ctx,
+		"SELECT driver_id FROM location_points WHERE vehicle_id = $1",
+		"bus-driver-test",
+	).Scan(&driverID)
+	require.NoError(t, err)
+	assert.Equal(t, "99", driverID, "driver_id must be persisted to location_points")
+}
+
+func TestStore_SaveLocation_DriverIDDefaultsToEmpty(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	store.pool.Exec(ctx, "DELETE FROM location_points")
+	store.pool.Exec(ctx, "DELETE FROM vehicles")
+
+	loc := &LocationReport{
+		VehicleID: "bus-no-driver",
+		Latitude:  1.0,
+		Longitude: 2.0,
+		Timestamp: time.Now().Unix(),
+		// DriverID intentionally omitted
+	}
+
+	err := store.SaveLocation(ctx, loc)
+	require.NoError(t, err)
+
+	var driverID string
+	err = store.pool.QueryRow(ctx,
+		"SELECT driver_id FROM location_points WHERE vehicle_id = $1",
+		"bus-no-driver",
+	).Scan(&driverID)
+	require.NoError(t, err)
+	assert.Equal(t, "", driverID, "driver_id must default to empty string when not set")
+}
+
+func TestStore_GetRecentLocations_ReturnsDriverID(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	store.pool.Exec(ctx, "DELETE FROM location_points")
+	store.pool.Exec(ctx, "DELETE FROM vehicles")
+
+	loc := &LocationReport{
+		VehicleID: "bus-driver-recent",
+		Latitude:  1.0,
+		Longitude: 2.0,
+		Timestamp: time.Now().Unix(),
+		DriverID:  "77",
+	}
+	err := store.SaveLocation(ctx, loc)
+	require.NoError(t, err)
+
+	cutoff := time.Now().Add(-5 * time.Minute)
+	locs, err := store.GetRecentLocations(ctx, cutoff)
+	require.NoError(t, err)
+	require.Len(t, locs, 1)
+	assert.Equal(t, "77", locs[0].DriverID, "driver_id must round-trip through save and GetRecentLocations")
+}
