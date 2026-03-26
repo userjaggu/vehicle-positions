@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -67,7 +66,7 @@ func handleLogin(fetcher UserFetcher, secret []byte) http.HandlerFunc {
 
 		user, err := fetcher.GetUserByEmail(r.Context(), req.Email)
 		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
+			if errors.Is(err, ErrUserNotFound) {
 				_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(req.Password)) // timing side-channel prevention
 				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid email or password"})
 				return
